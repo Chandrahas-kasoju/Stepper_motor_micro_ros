@@ -1,5 +1,5 @@
 # Stepper_motor_micro_ros
-This repository intends to control stepper motor using ROS(Robot Operating System) with the help of MicroROS.
+This repository intends to control stepper motor using ROS2(Robot Operating System2) with the help of MicroROS.
 
 ## PlatformIO setup
 ESP32 S2 mini board was used in this project which is also supported in platformIO. When creating a new project in PlatformIO select a board(in this case its WEMOS LOLIN S2 MINI)
@@ -18,4 +18,10 @@ In order to control the stepper motor from the Host PC, a micro_ros agent should
 Since the communication was established using  the serial port between the microcontroller and Host PC, the follwing command was used to launch the micro_ros_agent
 
 
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0
+```ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0```
+
+## Funding Acknowledgment
+
+This work is part of the **Hospibot** project, which is funded by [Interreg Deutschland-Danmark](https://www.interreg.eu/) 
+![Interreg-Logo_bilingual_RGB](https://github.com/user-attachments/assets/40f63064-e2ca-4b7e-877a-a9f98fdd57de)
+
