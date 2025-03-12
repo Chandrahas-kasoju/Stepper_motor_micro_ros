@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <pthread.h>
 #include <micro_ros_platformio.h>
 
 #include <rcl/rcl.h>
@@ -17,78 +18,98 @@ rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
-rcl_timer_t timer;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
 
-int steps_to_move = 0;
+volatile int current_command = 0;  // Stores latest joystick command
+int last_command = 99;  // Unlikely starting value
+unsigned long last_step_time = 0;
+const int step_delay = 200; // Microseconds between steps
+
 void error_loop() {
-  while(1) {
-    delay(100);
+    while(1) {
+        delay(100);
+    }
+}
+
+void *ros_spin_thread(void *arg) {
+  while (1) {
+      RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+      delay(10); // Small delay to avoid high CPU usage
   }
+  return NULL;
+}
+
+hw_timer_t *step_timer = NULL;
+
+void IRAM_ATTR stepperISR() {
+    if (current_command != 0) {  
+        digitalWrite(STEP_PIN, HIGH);
+        delayMicroseconds(50);  // Short pulse width
+        digitalWrite(STEP_PIN, LOW);
+    }
 }
 
 void stepper_motor_callback(const void *msg_in)
 {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msg_in;
 
-    steps_to_move = msg->data;
-    Serial.print("Received steps: ");
-    Serial.println(steps_to_move);
+    // Only update if the command is different
+    if (msg->data != last_command) {
+        last_command = msg->data;
+        current_command = msg->data;
+        
+        Serial.print("New joystick command: ");
+        Serial.println(current_command);
 
-    // Set direction
-    if (steps_to_move > 0) {
-        digitalWrite(DIR_PIN, HIGH);
-    } else {
-        digitalWrite(DIR_PIN, LOW);
-        steps_to_move = -steps_to_move; // Make positive
-    }
-
-    // Step motor
-    for (int i = 0; i < steps_to_move; i++) {
-        digitalWrite(STEP_PIN, HIGH);
-        delayMicroseconds(100);
-        digitalWrite(STEP_PIN, LOW);
-        delayMicroseconds(100);
+        if (current_command == 1) {
+            digitalWrite(DIR_PIN, HIGH);  // Move forward
+            digitalWrite(ENABLE_PIN, LOW); // Enable motor
+        } 
+        else if (current_command == -1) {
+            digitalWrite(DIR_PIN, LOW);  // Move backward
+            digitalWrite(ENABLE_PIN, LOW); // Enable motor
+        } 
+        else if (current_command == 0) {
+            digitalWrite(ENABLE_PIN, HIGH);  // Stop motor
+        }
     }
 }
 
 void setup()
 {
-    // Initialize GPIO pins
     pinMode(STEP_PIN, OUTPUT);
     pinMode(DIR_PIN, OUTPUT);
     pinMode(ENABLE_PIN, OUTPUT);
-    
-    // Initialize micro-ROS
+    digitalWrite(ENABLE_PIN, HIGH); // Start with motor disabled
+
     Serial.begin(115200);
     set_microros_serial_transports(Serial);
     delay(2000);
     allocator = rcl_get_default_allocator();
 
-    //create init_options
     RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
-
-    // create node
     RCCHECK(rclc_node_init_default(&node, "micro_ros_platformio_node", "", &support));
 
-    // Create subscriber
     RCCHECK(rclc_subscription_init_default(
         &subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
         "stepper_command"));
 
-    // Create executor
     RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
     RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &stepper_motor_callback, ON_NEW_DATA));
+    pthread_t rosThread;
+    pthread_create(&rosThread, NULL, ros_spin_thread, NULL);
 
+    step_timer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1us per count)
+    timerAttachInterrupt(step_timer, &stepperISR, true);
+    timerAlarmWrite(step_timer, step_delay, true);
+    timerAlarmEnable(step_timer);
 }
 
 void loop()
 {
-  delay(10);
-  RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
-    // micro-ROS logic is handled in setup, no loop logic needed
+  
 }
