@@ -15,10 +15,19 @@ In order to control the stepper motor from the Host PC, a micro_ros agent should
 
 *Note: You need to have ROS installed in your Host PC already and using Docker is optional*
 
-Since the communication was established using  the serial port between the microcontroller and Host PC, the follwing command was used to launch the micro_ros_agent
+Since the communication was established using  the serial port between the microcontroller and Host PC, the following command was used to launch the micro_ros_agent
 
 
 ```ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0```
+
+## Logic flow
+In the setup, a ros2 node is initiated. This ros2 node subscribes to a topic named "/stepper_command". Whenever the data is received on this topic, it triggers the callback function "stepper_motor_callback". Using the callback function to read the incoming messages and update the required variables is good practice. The ros node is run in a separate thread.
+
+In the callback function, the states of the Direction and the enable pins are toggled. The function that controls the motor is called by an Interrupt Service routine (ISR) periodically that toggles the state of the Step pin. In this way, the ros node and the stepper control functions can run asynchronously.
+
+![Screenshot from 2025-03-24 15-08-58](https://github.com/user-attachments/assets/25c1f8fd-a1b5-4772-9d3d-783de29edd23)
+
+
 
 ## Funding Acknowledgment
 
